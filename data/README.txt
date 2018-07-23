@@ -1,0 +1,1 @@
+This folder should contain mp4 video files.
