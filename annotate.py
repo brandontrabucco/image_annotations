@@ -11,6 +11,7 @@ from __future__ import print_function
 
 import numpy as np
 import imageio
+import scipy.misc
 import matplotlib.pyplot as plt
 import tensorflow as tf
 import time
@@ -49,11 +50,12 @@ class DatasetAnnotator(object):
 
         # Load the video files into memory.
         self.num_repetitions = num_repetitions
+        self.dimensions = (299, 299)
         self.video_frames = [imageio.get_reader(x,  "ffmpeg") for x in self.video_files]
         print("Finished loading {0} files from {1}".format(
             len(self.video_files), video_dir))
 
-        # Set the coordinate points fo interest
+        # Set the coordinate points of interest
         self.xdata, self.ydata = 0.5, 0.5
         self.point_names = ["center"]
 
@@ -76,8 +78,11 @@ class DatasetAnnotator(object):
             # Generate placeholder metadata objects
             print("Starting round {0} of {1} metadata.".format(r, self.num_repetitions))
             self.video_points = {video_id: {image_id: VideoMetadata(
-                image=np.array(img), image_id=image_id, video_id=video_id, 
-                xs=[0.0 for _ in range(len(self.point_names))], ys=[0.0 for _ in range(len(self.point_names))]) for image_id, img in enumerate(v)
+                image=scipy.misc.imresize(np.array(img), self.dimensions), 
+                image_id=image_id, video_id=video_id, 
+                xs=[0.0 for _ in range(len(self.point_names))], 
+                ys=[0.0 for _ in range(len(self.point_names))]) 
+                for image_id, img in enumerate(v)
                 } for video_id, v in enumerate(self.video_frames)}
             print("Finished processing initial videos.")
 
@@ -86,7 +91,8 @@ class DatasetAnnotator(object):
                 for video_id, v in enumerate(self.video_frames):
                     fig = plt.figure()
                     fig.canvas.mpl_connect("motion_notify_event", self.on_mouse_move)
-                    plt.imshow(v.get_data(0))
+                    image_buffer = plt.imshow(scipy.misc.imresize(
+                        np.array(v.get_data(0)), self.dimensions))
                     plt.axis("off")
                     fig.show()
 
@@ -97,20 +103,21 @@ class DatasetAnnotator(object):
 
                     # Display video frames and collect xs and ys.
                     for image_id, frame in enumerate(v):
-                        plt.imshow(frame)
-                        plt.axis("off")
-                        fig.show()
-                        time.sleep(0.01)
-                        plt.clf()
+                        image_buffer.set_data(scipy.misc.imresize(
+                            np.array(frame), self.dimensions))
+                        plt.pause(.01)
+                        plt.draw()
 
-                        print("video_id={0} image_id={1} x={2} and y={3}".format(video_id, image_id, self.xdata, self.ydata))
+                        print("video_id={0} image_id={1} x={2} and y={3}".format(
+                            video_id, image_id, self.xdata, self.ydata))
                         self.video_points[video_id][image_id].xs[point_id] = self.xdata
                         self.video_points[video_id][image_id].ys[point_id] = self.ydata
                     plt.close()
 
             # Flatten the image metadata objects to dump in tensorflow.
             print("Collecting round {0} of {1} metadata.".format(r, self.num_repetitions))
-            self.final_points.extend([self.video_points[video_id][image_id] for image_id, img in enumerate(v)
+            self.final_points.extend([self.video_points[video_id][image_id] 
+                for image_id, img in enumerate(v)
                 for video_id, v in enumerate(self.video_frames)])
             print("Finished collecting metadata.")
         return self.final_points
@@ -295,3 +302,5 @@ if __name__ == "__main__":
     ann = DatasetAnnotator(args.video_dir, args.num_repetitions)
     adp = DatasetAdaptor(ann.start(), args.train_dir)
     adp.start()
+
+
